@@ -53,6 +53,10 @@ public class PoseEstimator extends SubsystemBase {
         updatePoseEstimator();
     }
 
+    public void resetOdometry(Pose2d startingPose) {
+        swerveDrivePoseEstimator.resetPosition(startingPose, swerve.getHeading());
+    }
+
     public Pose2d getCurrentPose() {
         return swerveDrivePoseEstimator.getEstimatedPosition();
     }
