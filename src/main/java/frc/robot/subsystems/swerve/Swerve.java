@@ -68,11 +68,14 @@ public class Swerve extends SubsystemBase {
     /**
      * @return the gyro's yaw in Rotation2d
      */
-    public Rotation2d getHeading() {
+    Rotation2d getHeading() {
         return Rotation2d.fromDegrees(gyro.getYaw());
     }
 
-    public SwerveModuleState[] getSwerveModuleStates() {
+    /**
+     * @return the swerve module states
+     */
+    SwerveModuleState[] getSwerveModuleStates() {
         final List<SwerveModuleState> swerveModuleStates = new ArrayList<>();
 
         for(SwerveModule currentModule : SwerveConstants.SWERVE_MODULES) {
