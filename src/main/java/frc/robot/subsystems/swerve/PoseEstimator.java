@@ -4,6 +4,8 @@ import edu.wpi.first.math.estimator.SwerveDrivePoseEstimator;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Transform3d;
+import edu.wpi.first.wpilibj.shuffleboard.Shuffleboard;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import org.photonvision.PhotonCamera;
 import org.photonvision.targeting.PhotonPipelineResult;
@@ -21,9 +23,11 @@ public class PoseEstimator extends SubsystemBase {
                 swerve.getHeading(),
                 new Pose2d(),
                 SwerveConstants.KINEMATICS,
-                SwerveConstants.MODULE_STATES_TRUST,
-                SwerveConstants.ENCODER_AND_GYRO_READINGS_TRUST,
-                SwerveConstants.VISION_CALCULATIONS_TRUST);
+                SwerveConstants.MODULE_STATES_AMBIGUITY,
+                SwerveConstants.ENCODER_AND_GYRO_READINGS_AMBIGUITY,
+                SwerveConstants.VISION_CALCULATIONS_AMBIGUITY);
+
+        putOnDashboard();
     }
 
     @Override
@@ -37,19 +41,24 @@ public class PoseEstimator extends SubsystemBase {
         }
 
         previousTimestamp = pipelineResultTimestamp;
-        final PhotonTrackedTarget bestTarget = pipelineResult.getBestTarget();
-        final int bestTargetTagId = bestTarget.getFiducialId();
+        final PhotonTrackedTarget bestTag = pipelineResult.getBestTarget();
+        final int bestTagId = bestTag.getFiducialId();
 
-        if (bestTarget.getPoseAmbiguity() <= 0.2 && bestTargetTagId >= 0 && bestTargetTagId < SwerveConstants.TAG_POSES.size()) {
-            final Pose3d targetTagPose = SwerveConstants.TAG_POSES.get(bestTargetTagId);
-            final Transform3d camToTarget = bestTarget.getBestCameraToTarget();
-            final Pose3d
-                    camPose = targetTagPose.transformBy(camToTarget.inverse()),
-                    visionMeasurement = camPose.transformBy(SwerveConstants.CAMERA_TO_ROBOT);
-
-            swerveDrivePoseEstimator.addVisionMeasurement(visionMeasurement.toPose2d(), pipelineResultTimestamp);
+        if (bestTag.getPoseAmbiguity() > SwerveConstants.ALLOWED_TAG_AMBIGUITY || bestTagId < 0 ||
+                bestTagId > SwerveConstants.TAG_POSES.size()){
+            updatePoseEstimator();
+            return;
         }
 
+        final Pose3d bestTagPose = SwerveConstants.TAG_POSES.get(bestTagId);
+        final Transform3d
+                cameraToTag = bestTag.getBestCameraToTarget(),
+                tagToCamera = cameraToTag.inverse();
+        final Pose3d
+                cameraPose = bestTagPose.transformBy(tagToCamera),
+                robotPose = cameraPose.transformBy(SwerveConstants.CAMERA_TO_ROBOT);
+
+        swerveDrivePoseEstimator.addVisionMeasurement(robotPose.toPose2d(), pipelineResultTimestamp);
         updatePoseEstimator();
     }
 
@@ -63,5 +72,13 @@ public class PoseEstimator extends SubsystemBase {
 
     private void updatePoseEstimator() {
         swerveDrivePoseEstimator.update(swerve.getHeading(), swerve.getSwerveModuleStates());
+
+        putOnDashboard();
+    }
+
+    private void putOnDashboard() {
+        SmartDashboard.putNumber("robot_x", getCurrentPose().getX());
+        SmartDashboard.putNumber("robot_y", getCurrentPose().getY());
+        SmartDashboard.putNumber("robot_degrees", getCurrentPose().getRotation().getDegrees());
     }
 }
