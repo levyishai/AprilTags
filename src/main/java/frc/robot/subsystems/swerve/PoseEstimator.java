@@ -4,35 +4,47 @@ import edu.wpi.first.math.estimator.SwerveDrivePoseEstimator;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Transform3d;
-import edu.wpi.first.wpilibj.shuffleboard.Shuffleboard;
-import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
+import io.github.oblarg.oblog.Loggable;
+import io.github.oblarg.oblog.annotations.Log;
 import org.photonvision.PhotonCamera;
 import org.photonvision.targeting.PhotonPipelineResult;
 import org.photonvision.targeting.PhotonTrackedTarget;
 
-public class PoseEstimator extends SubsystemBase {
+public class PoseEstimator extends SubsystemBase implements Loggable {
     private final Swerve swerve = Swerve.getInstance();
-    private final PhotonCamera photonCamera;
     private final SwerveDrivePoseEstimator swerveDrivePoseEstimator;
+    private final PhotonCamera camera;
+    @Log
+    private final Field2d field = new Field2d();
     private double previousTimestamp = 0;
 
-    public PoseEstimator(PhotonCamera photonCamera) {
-        this.photonCamera = photonCamera;
+    public PoseEstimator(PhotonCamera camera) {
         swerveDrivePoseEstimator = new SwerveDrivePoseEstimator(
                 swerve.getHeading(),
                 new Pose2d(),
                 SwerveConstants.KINEMATICS,
-                SwerveConstants.MODULE_STATES_AMBIGUITY,
-                SwerveConstants.ENCODER_AND_GYRO_READINGS_AMBIGUITY,
-                SwerveConstants.VISION_CALCULATIONS_AMBIGUITY);
+                PoseEstimatorConstants.MODULE_STATES_AMBIGUITY,
+                PoseEstimatorConstants.ENCODER_AND_GYRO_READINGS_AMBIGUITY,
+                PoseEstimatorConstants.VISION_CALCULATIONS_AMBIGUITY
+        );
 
-        putOnDashboard();
+        this.camera = camera;
     }
 
-    @Override
-    public void periodic() {
-        final PhotonPipelineResult pipelineResult = photonCamera.getLatestResult();
+    public void resetOdometry(Pose2d startingPose) {
+        swerveDrivePoseEstimator.resetPosition(startingPose, swerve.getHeading());
+    }
+
+    public Pose2d getCurrentPose() {
+        if (swerveDrivePoseEstimator == null) return new Pose2d();
+
+        return swerveDrivePoseEstimator.getEstimatedPosition();
+    }
+
+    void attemptToAddVisionMeasurement() {
+        final PhotonPipelineResult pipelineResult = camera.getLatestResult();
         final double pipelineResultTimestamp = pipelineResult.getTimestampSeconds();
 
         if (pipelineResultTimestamp == previousTimestamp || !pipelineResult.hasTargets()) {
@@ -44,41 +56,33 @@ public class PoseEstimator extends SubsystemBase {
         final PhotonTrackedTarget bestTag = pipelineResult.getBestTarget();
         final int bestTagId = bestTag.getFiducialId();
 
-        if (bestTag.getPoseAmbiguity() > SwerveConstants.ALLOWED_TAG_AMBIGUITY || bestTagId < 0 ||
-                bestTagId > SwerveConstants.TAG_POSES.size()){
+        if (bestTag.getPoseAmbiguity() > PoseEstimatorConstants.MINIMUM_TAG_AMBIGUITY || bestTagId < 0 ||
+                bestTagId > PoseEstimatorConstants.TAG_POSES.size()) {
             updatePoseEstimator();
             return;
         }
 
-        final Pose3d bestTagPose = SwerveConstants.TAG_POSES.get(bestTagId);
-        final Transform3d
-                cameraToTag = bestTag.getBestCameraToTarget(),
-                tagToCamera = cameraToTag.inverse();
-        final Pose3d
-                cameraPose = bestTagPose.transformBy(tagToCamera),
-                robotPose = cameraPose.transformBy(SwerveConstants.CAMERA_TO_ROBOT);
-
-        swerveDrivePoseEstimator.addVisionMeasurement(robotPose.toPose2d(), pipelineResultTimestamp);
+        swerveDrivePoseEstimator.addVisionMeasurement(getRobotPoseFromTag(bestTag), pipelineResultTimestamp);
         updatePoseEstimator();
     }
 
-    public void resetOdometry(Pose2d startingPose) {
-        swerveDrivePoseEstimator.resetPosition(startingPose, swerve.getHeading());
-    }
+    private Pose2d getRobotPoseFromTag(PhotonTrackedTarget tag) {
+        final int tagId = tag.getFiducialId();
 
-    public Pose2d getCurrentPose() {
-        return swerveDrivePoseEstimator.getEstimatedPosition();
+        final Transform3d
+                cameraToTag = tag.getBestCameraToTarget(),
+                tagToCamera = cameraToTag.inverse();
+
+        final Pose3d
+                tagPose = PoseEstimatorConstants.TAG_POSES.get(tagId),
+                cameraPose = tagPose.transformBy(tagToCamera);
+
+        return cameraPose.transformBy(PoseEstimatorConstants.CAMERA_TO_ROBOT).toPose2d();
     }
 
     private void updatePoseEstimator() {
+        field.setRobotPose(getCurrentPose());
         swerveDrivePoseEstimator.update(swerve.getHeading(), swerve.getSwerveModuleStates());
-
-        putOnDashboard();
     }
 
-    private void putOnDashboard() {
-        SmartDashboard.putNumber("robot_x", getCurrentPose().getX());
-        SmartDashboard.putNumber("robot_y", getCurrentPose().getY());
-        SmartDashboard.putNumber("robot_degrees", getCurrentPose().getRotation().getDegrees());
-    }
 }
