@@ -5,9 +5,8 @@ import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.SwerveDriveKinematics;
-import io.github.oblarg.oblog.Loggable;
 
-public class SwerveConstants implements Loggable {
+public class SwerveConstants {
     static final double
             HUB_X = 8.2296,
             HUB_Y = 0.5121;
